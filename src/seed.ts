@@ -12,6 +12,10 @@
 // — text the number yourself and watch a commitment get captured live to see
 // the real path, not this one.
 
+// Bun auto-loads .env; Node does not. Loading it here (a no-op when the
+// vars are already injected, as on Render) keeps `npm start`, `npm run
+// seed` and `npm run doctor` working identically on both runtimes.
+import "dotenv/config";
 import "./db";
 import { db } from "./db";
 import { upsertPerson, upsertThread, addThreadMember } from "./people";

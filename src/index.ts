@@ -1,3 +1,7 @@
+// Bun auto-loads .env; Node does not. Loading it here (a no-op when the
+// vars are already injected, as on Render) keeps `npm start`, `npm run
+// seed` and `npm run doctor` working identically on both runtimes.
+import "dotenv/config";
 import "./db"; // schema init side-effect
 import { Hono } from "hono";
 import { createHmac, timingSafeEqual } from "node:crypto";
@@ -13,6 +17,7 @@ import { rememberFor, listMemories, pinMemory, forgetMemory, forgetThread, forge
 import { logActivity, recentActivity, formatActivity } from "./activity";
 import { getSettings, setAutonomyLevel, setPaused, isPaused } from "./settings";
 import { echoSearch } from "./search";
+import { hasCredentials as hasLlmCredentials, credentialHint as llmCredentialHint } from "./llm";
 import { transcribe, synthesize, speakable, isVoiceEnabled } from "./voice";
 import {
   routeCommand,
@@ -82,7 +87,10 @@ const missing = [
   !PROJECT_ID && "SPECTRUM_PROJECT_ID",
   !PROJECT_SECRET && "SPECTRUM_PROJECT_SECRET",
   !SIGNING_SECRET && "SPECTRUM_SIGNING_SECRET (register the webhook first — see README)",
-  !process.env.ANTHROPIC_API_KEY && "ANTHROPIC_API_KEY",
+  // Provider-aware: Gemini needs GEMINI_API_KEY, Anthropic needs a key or
+  // Bearer token. Hardcoding ANTHROPIC_API_KEY here was a leftover from before
+  // src/llm/ existed, and it blocked boot on a perfectly-configured Gemini setup.
+  !hasLlmCredentials() && llmCredentialHint(),
   !PRIMARY_USER_ADDRESS && "PRIMARY_USER_ADDRESS (your iMessage phone number or Apple ID email)",
 ].filter(Boolean);
 

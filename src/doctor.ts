@@ -5,6 +5,10 @@
 // ECHO is built on both. A backend that silently drops tool calls doesn't
 // error — it just captures nothing from your messages, which looks like ECHO
 // being broken rather than the backend being wrong.
+// Bun auto-loads .env; Node does not. Loading it here (a no-op when the
+// vars are already injected, as on Render) keeps `npm start`, `npm run
+// seed` and `npm run doctor` working identically on both runtimes.
+import "dotenv/config";
 import {
   createMessage,
   MODEL,
