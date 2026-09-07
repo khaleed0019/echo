@@ -42,7 +42,10 @@ if (isBun) {
     exec: (sql: string) => bunDb.exec(sql),
   };
 } else {
-  // node:sqlite is available from Node 22.5+ (emits an ExperimentalWarning).
+  // node:sqlite landed in Node 22.5 but stayed behind --experimental-sqlite
+  // until 23.4, so this needs Node >= 23.4 to import unflagged (see
+  // package.json engines). On Render, pin NODE_VERSION accordingly — 22.x
+  // fails at import with ERR_UNKNOWN_BUILTIN_MODULE.
   const { DatabaseSync } = await import("node:sqlite");
   const nodeDb = new DatabaseSync(DB_PATH);
   raw = {
