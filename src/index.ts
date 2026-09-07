@@ -481,16 +481,48 @@ async function handleText(
   // Every text message ECHO sees gets run through the extraction engine —
   // this is the continuous "life context" ingestion, real whether it's a
   // command channel or a group thread ECHO silently listens in.
-  const result = await ingestTextMessage({ messageId: crypto.randomUUID(), threadId, threadTitle, senderName: sender.name, senderPersonId: sender.id, text: textBody });
+  //
+  // Extraction is best-effort and MUST NOT be able to take the rest of the
+  // handler down with it. A transient provider 503 here used to throw all the
+  // way out of handleInbound, so the user got no reply at all — indis-
+  // tinguishable from ECHO being dead, and it swallowed watch firing too.
+  // Now a failure costs exactly what it should: this one message isn't
+  // captured, and the user is told so.
+  let result: Awaited<ReturnType<typeof ingestTextMessage>> | null = null;
+  try {
+    result = await ingestTextMessage({ messageId: crypto.randomUUID(), threadId, threadTitle, senderName: sender.name, senderPersonId: sender.id, text: textBody });
+  } catch (err) {
+    const detail = (err as Error).message;
+    console.error("extraction failed (continuing):", detail);
+    logActivity(`Extraction failed for a message in "${threadTitle}" — it wasn't captured`, sender.id, "Extraction Agent");
+    if (isCommandChannel) {
+      const overloaded = /50\d|high demand|overloaded|UNAVAILABLE|429|quota/i.test(detail);
+      await sendTo(sender.address, [
+        say(
+          overloaded
+            ? "My language model is rate-limited right now, so I didn't capture that one. Everything already stored still works — try again in a moment."
+            : "I couldn't process that message. Everything already stored still works.",
+        ),
+      ]);
+    }
+  }
 
-  if (isCommandChannel && looksLikeSharedConversation(textBody)) {
+  if (result && isCommandChannel && looksLikeSharedConversation(textBody)) {
     const analysis = formatConversationAnalysis(result);
     if (analysis) await sendTo(sender.address, [say(analysis)]);
   }
 
   // Fire any watch waiting on this sender in this thread — proactively DMs
   // the requester, who may be in a completely different conversation.
-  const fired = await checkAndFireWatches({ threadId, senderPersonId: sender.id, messageText: textBody, threadTitle });
+  // Same reasoning as extraction above: a watch summary calls the LLM, so a
+  // provider blip must not take down the handler. A watch that fails to fire
+  // is bad; one that also kills the reply path is worse.
+  let fired: Awaited<ReturnType<typeof checkAndFireWatches>> = [];
+  try {
+    fired = await checkAndFireWatches({ threadId, senderPersonId: sender.id, messageText: textBody, threadTitle });
+  } catch (err) {
+    console.error("watch firing failed (continuing):", (err as Error).message);
+  }
   for (const f of fired) {
     logActivity(`${sender.name} replied in "${threadTitle}" — fired a watch and briefed the requester`, sender.id, "Follow-up Agent");
     await sendTo(f.requesterAddress, [say(`**${threadTitle} update:**\n${f.briefing}`)]);

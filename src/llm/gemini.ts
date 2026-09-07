@@ -9,6 +9,11 @@ import type {
 
 const BASE = "https://generativelanguage.googleapis.com/v1beta";
 
+/** Tried in order when the configured model is unavailable. Ordered
+ *  most-capable first; the -lite entries have higher free-tier rate limits
+ *  and are far less likely to be capacity-throttled. */
+const FALLBACK_MODELS = ["gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-3.5-flash-lite", "gemini-flash-latest"];
+
 /**
  * Gemini's function-declaration schema is OpenAPI-flavoured, not full JSON
  * Schema, and it rejects several things ECHO's tool definitions use:
@@ -155,18 +160,39 @@ export function createGeminiBackend(opts: { apiKey: string }): LLMBackend {
         }
       }
 
-      const res = await fetch(`${BASE}/models/${params.model}:generateContent`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-goog-api-key": opts.apiKey },
-        body: JSON.stringify(body),
-      });
+      // Gemini's newest Flash models return 503 "high demand" under load, and
+      // 429 when the free-tier RPM is hit. Both are transient and both are
+      // common enough that a single attempt is not good enough for a live
+      // demo — a 503 mid-conversation reads to the user as ECHO being broken.
+      // Retry with backoff, then fall back to a less-contended model rather
+      // than failing the whole message.
+      const candidates = [params.model, ...FALLBACK_MODELS.filter((m) => m !== params.model)];
+      let lastError = "";
+      let json: any = null;
 
-      if (!res.ok) {
-        const detail = await res.text().catch(() => "");
-        throw new Error(`Gemini ${res.status}: ${detail.slice(0, 300)}`);
+      outer: for (const model of candidates) {
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const res = await fetch(`${BASE}/models/${model}:generateContent`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "x-goog-api-key": opts.apiKey },
+            body: JSON.stringify(body),
+          });
+
+          if (res.ok) {
+            json = await res.json();
+            break outer;
+          }
+
+          const detail = await res.text().catch(() => "");
+          lastError = `Gemini ${res.status} on ${model}: ${detail.slice(0, 200)}`;
+
+          const transient = res.status === 503 || res.status === 429 || res.status >= 500;
+          if (!transient) break; // 400/404 won't fix themselves — try the next model
+          await new Promise((r) => setTimeout(r, 400 * 2 ** attempt)); // 400ms, 800ms, 1.6s
+        }
       }
 
-      const json = (await res.json()) as any;
+      if (!json) throw new Error(lastError || "Gemini: all models and retries exhausted");
       const candidate = json?.candidates?.[0];
       const parts = candidate?.content?.parts ?? [];
       const finishReason = candidate?.finishReason;
