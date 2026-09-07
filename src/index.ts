@@ -102,20 +102,35 @@ function fatal(message: string): never {
 if (missing.length) {
   fatal("Missing required env vars in .env:\n" + missing.map((m) => `    - ${m}`).join("\n"));
 }
-// Accept E.164 (+14155551234) or an email (Apple ID) — iMessage supports both.
-const isE164 = /^\+[1-9]\d{6,14}$/.test(PRIMARY_USER_ADDRESS!);
-const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(PRIMARY_USER_ADDRESS!);
-if (!isE164 && !isEmail) {
+// PRIMARY_USER_ADDRESS accepts a COMMA-SEPARATED list, because one person can
+// reach iMessage at several addresses and you don't always control which one a
+// given message arrives from. Photon enrols an account by phone number, while
+// an iPhone whose iMessage is registered to an Apple ID email sends from that
+// email instead — so the enrolment address and the sending address can
+// legitimately differ. Listing both beats guessing: guessing wrong means ECHO
+// silently ignores every command, which looks identical to it being broken.
+const isE164 = (a: string) => /^\+[1-9]\d{6,14}$/.test(a);
+const isEmail = (a: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(a);
+
+const primaryAddressList = PRIMARY_USER_ADDRESS!.split(",")
+  .map((a) => a.trim())
+  .filter(Boolean);
+
+const badAddress = primaryAddressList.find((a) => !isE164(a) && !isEmail(a));
+if (!primaryAddressList.length || badAddress) {
   fatal(
-    `PRIMARY_USER_ADDRESS must be an E.164 phone number (+14155551234) or an email ` +
-      `(you@example.com) — got "${PRIMARY_USER_ADDRESS}"`,
+    `PRIMARY_USER_ADDRESS entries must each be an E.164 phone number (+14155551234) ` +
+      `or an email (you@example.com)${badAddress ? ` — got "${badAddress}"` : ""}. ` +
+      `Separate multiple addresses with commas.`,
   );
 }
 
 // Past the guards above these are guaranteed present; the non-null assertions
 // are what let the rest of the file treat them as plain strings.
 const signingSecret: string = SIGNING_SECRET!;
-const primaryUserAddress: string = normalizeAddress(PRIMARY_USER_ADDRESS!);
+const primaryAddresses = new Set(primaryAddressList.map(normalizeAddress));
+/** The canonical identity ECHO stores "You" under — first entry wins. */
+const primaryUserAddress: string = normalizeAddress(primaryAddressList[0]!);
 if (!process.env.PUBLIC_BASE_URL) {
   console.warn("  PUBLIC_BASE_URL not set — live cards will point at localhost and won't load on your phone.");
 }
@@ -216,7 +231,7 @@ async function handleInbound(payload: any) {
   const sender = upsertPerson(senderAddress);
   addThreadMember(thread.id, sender.id);
 
-  const isPrimaryUser = normalizeAddress(senderAddress) === primaryUserAddress;
+  const isPrimaryUser = primaryAddresses.has(normalizeAddress(senderAddress));
   const isCommandChannel = isPrimaryUser && space.type === "dm";
 
   // Privacy Center: while paused, ECHO does nothing at all — no passive
