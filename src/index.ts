@@ -661,6 +661,35 @@ web.get("/dashboard", (c) => {
 
 web.get("/", (c) => c.text("echo is running"));
 
+/**
+ * Keep-alive. Render's free tier spins an instance down after ~15 minutes
+ * with no inbound HTTP, and the cold start is ~50s — long enough that
+ * Spectrum's webhook worker treats the first message after a quiet period as
+ * a timeout and retries it. That reads as ECHO dropping or duplicating your
+ * message.
+ *
+ * A request to our own PUBLIC_BASE_URL leaves the instance, hits Render's
+ * router, and comes back as genuine inbound traffic, which resets the idle
+ * timer. Only runs when PUBLIC_BASE_URL is a real public URL — pinging
+ * localhost would do nothing.
+ *
+ * Cost: keeping one instance awake uses ~730 of the 750 free instance-hours
+ * a month, so this effectively spends the whole free allowance on ECHO.
+ * Set KEEPALIVE=false to turn it off.
+ */
+if (process.env.KEEPALIVE !== "false" && /^https:\/\//.test(PUBLIC_BASE_URL)) {
+  const KEEPALIVE_MS = 10 * 60 * 1000; // comfortably under Render's ~15min idle window
+  setInterval(() => {
+    fetch(`${PUBLIC_BASE_URL}/healthz`).catch(() => {
+      // A failed ping is not worth logging every 10 minutes — the next one retries.
+    });
+  }, KEEPALIVE_MS).unref?.();
+  console.log(`Keep-alive: pinging ${PUBLIC_BASE_URL}/healthz every 10 min`);
+}
+
+// Deliberately separate from "/" so keep-alive traffic is filterable in logs.
+web.get("/healthz", (c) => c.json({ ok: true, at: new Date().toISOString() }));
+
 // Bun serves via `export default { port, fetch }`; Node needs an explicit
 // server. Supporting both keeps `bun run dev` working locally while letting
 // this deploy to Node-only hosts (Render has no Bun runtime).
