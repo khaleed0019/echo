@@ -292,7 +292,12 @@ async function handleText(
    *  in kind, so asking out loud gets you a spoken reply back. */
   replyWithVoice = false,
 ) {
-  recordMessage({ id: crypto.randomUUID(), threadId, senderPersonId: sender.id, direction: "inbound", contentType: "text", text: textBody });
+  // ONE id for this message, reused by the extractor below. Generating a
+  // second random id there made every commitments/events/opportunities insert
+  // reference a messages row that didn't exist -> "FOREIGN KEY constraint
+  // failed", which the catch turned into "I couldn't process that message".
+  const storedMessageId = crypto.randomUUID();
+  recordMessage({ id: storedMessageId, threadId, senderPersonId: sender.id, direction: "inbound", contentType: "text", text: textBody });
 
   // When the question arrived as speech, every text reply below is upgraded
   // to a spoken one at send time.
@@ -490,7 +495,7 @@ async function handleText(
   // captured, and the user is told so.
   let result: Awaited<ReturnType<typeof ingestTextMessage>> | null = null;
   try {
-    result = await ingestTextMessage({ messageId: crypto.randomUUID(), threadId, threadTitle, senderName: sender.name, senderPersonId: sender.id, text: textBody });
+    result = await ingestTextMessage({ messageId: storedMessageId, threadId, threadTitle, senderName: sender.name, senderPersonId: sender.id, text: textBody });
   } catch (err) {
     const detail = (err as Error).message;
     console.error("extraction failed (continuing):", detail);

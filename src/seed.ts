@@ -39,6 +39,13 @@ function seededMessage(id: string, threadId: string, senderId: string, text: str
 }
 
 export async function seedDemoData() {
+  // Guard here, not just at the boot call site: the structured inserts below
+  // use AUTOINCREMENT ids with no conflict clause, so a second run silently
+  // doubles every commitment/event/decision rather than erroring.
+  if (isSeeded()) {
+    console.log("Already seeded — skipping (delete the DB file to re-seed).");
+    return;
+  }
   console.log("Seeding ECHO demo data...");
 
   const you = upsertPerson(PRIMARY_USER_ADDRESS, "You");

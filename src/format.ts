@@ -7,11 +7,43 @@ function whoOwns(owner: string): string {
   return getPersonById(owner)?.name ?? "Someone";
 }
 
+/**
+ * Renders dates in the user's timezone (DISPLAY_TIMEZONE), not the server's.
+ * Render runs UTC; showing a UTC time to someone in UTC+1 can shift a due
+ * date to the wrong *day*, which is worse than ugly.
+ *
+ * Also drops the time component when it's midnight. "by Friday" has no time
+ * in it, the extractor stores 00:00, and rendering that as "1:00 AM" reads as
+ * a bug — a date with no stated time should print as a date.
+ */
+const DISPLAY_TZ = process.env.DISPLAY_TIMEZONE || "UTC";
+
 function fmtDate(iso: string | null): string {
   if (!iso) return "no date set";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+
+  // "by Friday" carries no time, and the extractor encodes that as midnight
+  // UTC. Two things follow, and both matter on screen:
+  //   1. Don't print a time — rendering 00:00Z as "1:00 AM" reads as a bug.
+  //   2. Don't shift the zone either. Converting a date-only value into a
+  //      different zone can move it to the previous/next DAY, turning
+  //      "due Friday" into "due Thursday". So format date-only values in UTC.
+  const dateOnly = d.getUTCHours() === 0 && d.getUTCMinutes() === 0;
+  if (dateOnly) {
+    return d.toLocaleString("en-US", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric" });
+  }
+
+  // A real stated time ("3pm Friday") is shown in the user's zone, because
+  // Render runs UTC and an hour offset would otherwise be wrong.
+  return d.toLocaleString("en-US", {
+    timeZone: DISPLAY_TZ,
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 function bullet(lines: string[]): string {
