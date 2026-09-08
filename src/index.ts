@@ -684,6 +684,32 @@ web.get("/card/export", (c) => {
 });
 
 // ---- ECHO Command Center (real, reads the same live DB — see src/dashboard.ts) ----
+// Demo helper: open this on your phone and screenshot it to exercise the
+// screenshot -> event flow. Lives here rather than in demo-assets/ so it's
+// reachable from a phone without transferring a file.
+web.get("/demo/flyer", (c) =>
+  c.html(`<!doctype html><html><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Design Team Offsite</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@700&family=DM+Sans:wght@400;700&display=swap" rel="stylesheet"/>
+<style>
+ body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+   background:radial-gradient(circle at 20% 10%,#1e1b4b,#0f172a 60%);font-family:"DM Sans",sans-serif;color:#fff;padding:20px}
+ .f{width:100%;max-width:360px;padding:40px 32px;border-radius:24px;
+   background:linear-gradient(160deg,#7C3AED,#4338CA);box-shadow:0 30px 80px -20px rgba(124,58,237,.6);text-align:center}
+ .e{font-size:12px;letter-spacing:.14em;text-transform:uppercase;opacity:.85}
+ h1{font-family:"Space Grotesk",sans-serif;font-size:30px;margin:10px 0 18px;line-height:1.15}
+ .d{font-size:15px;margin:6px 0;opacity:.95}
+</style></head><body><div class="f">
+ <div class="e">You're invited</div>
+ <h1>Design Team Offsite</h1>
+ <div class="d"><b>Friday, Oct 3 &middot; 10:00 AM</b></div>
+ <div class="d">Conference Room B, 4th Floor</div>
+ <div class="d" style="margin-top:14px;opacity:.75">Bring your laptop. Coffee provided.</div>
+</div></body></html>`),
+);
+
 web.get("/dashboard", (c) => {
   const hour = new Date().getHours();
   const greeting = (hour < 12 ? "Good morning." : hour < 18 ? "Good afternoon." : "Good evening.") + " Here's everything.";
