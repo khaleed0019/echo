@@ -66,7 +66,7 @@ import { renderBriefCard } from "./cards/brief";
 import { renderOrbCard, type OrbState } from "./cards/orb";
 import { renderExportCard } from "./cards/export";
 import { renderDashboard } from "./dashboard";
-import { formatCatchMeUp, formatWeeklyReview } from "./format";
+import { formatCatchMeUp, formatWeeklyReview, formatCaptureAck } from "./format";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const TOLERANCE_SEC = 5 * 60;
@@ -507,9 +507,21 @@ async function handleText(
     }
   }
 
-  if (result && isCommandChannel && looksLikeSharedConversation(textBody)) {
-    const analysis = formatConversationAnalysis(result);
-    if (analysis) await sendTo(sender.address, [say(analysis)]);
+  if (result && isCommandChannel) {
+    if (looksLikeSharedConversation(textBody)) {
+      // A pasted/forwarded conversation gets the fuller promise/deadline/
+      // opportunity breakdown.
+      const analysis = formatConversationAnalysis(result);
+      if (analysis) await sendTo(sender.address, [say(analysis)]);
+    } else {
+      // A normal one-liner gets a compact acknowledgement echoing what was
+      // understood. Deliberately ONLY in the command channel: acking every
+      // message in a group ECHO happens to be in is exactly the "spammy bot"
+      // behaviour the silent-listening design avoids. Silent when nothing
+      // was extracted, so small talk doesn't get a reply either.
+      const ack = formatCaptureAck(result);
+      if (ack) await sendTo(sender.address, [say(ack)]);
+    }
   }
 
   // Fire any watch waiting on this sender in this thread — proactively DMs

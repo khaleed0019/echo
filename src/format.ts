@@ -1,5 +1,5 @@
 import type { CatchMeUp, TimelineItem } from "./queries";
-import type { Commitment, Decision, LifeEvent, OpenQuestion } from "./types";
+import type { Commitment, Decision, LifeEvent, OpenQuestion, ExtractionResult } from "./types";
 import { getPersonById } from "./people";
 
 function whoOwns(owner: string): string {
@@ -152,4 +152,30 @@ export function formatCleanup(c: { overdueCommitments: Commitment[]; staleQuesti
   if (c.staleQuestions.length) lines.push(bullet(c.staleQuestions.map((x) => `Stale question: ${x.question_text}`)));
   lines.push("\nReply to the poll to mark them resolved.");
   return lines.join("\n");
+}
+
+/**
+ * Compact "I caught that" acknowledgement for a normal (non-command) message
+ * in the command channel. Echoes back the *structured* understanding rather
+ * than a bare "noted" — seeing the parsed due date is what makes it obvious
+ * ECHO actually understood, not just that it received something.
+ *
+ * Returns null when nothing was extracted, so small talk stays silent.
+ */
+export function formatCaptureAck(r: ExtractionResult): string | null {
+  const bits: string[] = [];
+
+  for (const c of r.commitments) {
+    const who = c.owner === "me" ? "You" : "They";
+    bits.push(`${who}: ${c.description}${c.due_at ? ` — due ${fmtDate(c.due_at)}` : ""}`);
+  }
+  for (const e of r.events) {
+    bits.push(`Event: ${e.title}${e.starts_at ? ` — ${fmtDate(e.starts_at)}` : ""}`);
+  }
+  for (const d of r.decisions) bits.push(`Decision: ${d.decision_text}`);
+  for (const q of r.open_questions) bits.push(`Question: ${q.question_text}`);
+  for (const o of r.opportunities) bits.push(`Opportunity: ${o.description}`);
+
+  if (!bits.length) return null;
+  return `**Noted.**\n` + bullet(bits);
 }
